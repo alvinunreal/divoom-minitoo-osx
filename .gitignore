@@ -1,0 +1,17 @@
+.DS_Store
+.venv/
+
+# Generated capture/reconstruction artifacts
+captures/
+
+# Local Swift build outputs
+tools/divoom-daemon
+tools/divoom-rfcomm
+tools/divoom-rfcomm-send
+tools/divoom-menubar
+
+# Source/input images used during local testing
+*.png
+*.jpg
+*.jpeg
+*.webp

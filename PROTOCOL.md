@@ -355,6 +355,14 @@ Menu actions:
   - Choose a PNG/JPEG/image file.
   - Uses `.venv/bin/python tools/divoom_send.py <image>`.
   - Disabled while daemon is stopped.
+- `Activate Custom Face 1`
+  - Sends captured `Channel/SetClockSelectId` for `ClockId=984`.
+  - Uses `.venv/bin/python tools/divoom_clock.py custom1`.
+  - Disabled while daemon is stopped.
+- `Activate Custom Face 2`
+  - Sends captured `Channel/SetClockSelectId` for `ClockId=986`.
+  - Uses `.venv/bin/python tools/divoom_clock.py custom2`.
+  - Disabled while daemon is stopped.
 - `Start Daemon`
   - Starts `tools/divoom-daemon` without disconnecting audio first.
   - Disabled while daemon is already running.
@@ -383,3 +391,31 @@ Current UX notes:
 - The menu refreshes when opened, so daemon/audio status should reflect current state.
 - The app avoids modal success/error popups; status appears as the `Last:` line in the menu.
 - Current implementation is a lean menu-bar binary, not a packaged `.app` yet. If desired, wrap it in a proper LaunchAgent or `.app` bundle later.
+
+## Custom face selection
+
+Captured Android actions:
+
+```text
+custom face 1 -> ClockId 984
+custom face 2 -> ClockId 986
+```
+
+The app sends JSON command `Channel/SetClockSelectId` as generic command `0x01`.
+
+Captured body for custom face 1:
+
+```json
+{"ClockId":984,"Command":"Channel/SetClockSelectId","DeviceId":600111083,"DevicePassword":1777733348,"Language":"en","LcdIndependence":0,"LcdIndex":0,"PageIndex":0,"ParentClockId":0,"ParentItemId":"","Token":1777741943,"UserId":404779143}
+```
+
+Captured body for custom face 2 is the same except `ClockId=986`.
+
+CLI:
+
+```bash
+.venv/bin/python tools/divoom_clock.py custom1
+.venv/bin/python tools/divoom_clock.py custom2
+# or any explicit clock id:
+.venv/bin/python tools/divoom_clock.py 984
+```

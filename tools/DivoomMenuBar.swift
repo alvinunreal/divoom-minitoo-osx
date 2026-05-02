@@ -53,6 +53,8 @@ final class DivoomMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(disabled("Last: \(lastMessage)"))
         menu.addItem(NSMenuItem.separator())
         menu.addItem(item("Send Image…", #selector(sendImage), enabled: daemonRunning))
+        menu.addItem(item("Activate Custom Face 1", #selector(activateCustomFace1), enabled: daemonRunning))
+        menu.addItem(item("Activate Custom Face 2", #selector(activateCustomFace2), enabled: daemonRunning))
         menu.addItem(NSMenuItem.separator())
         menu.addItem(item("Start Daemon (only if audio disconnected)", #selector(startDaemonMenu), enabled: !daemonRunning && !audioConnected))
         menu.addItem(item("Disconnect Audio + Start Daemon", #selector(disconnectAndStartMenu), enabled: !daemonRunning))
@@ -223,6 +225,23 @@ final class DivoomMenuBar: NSObject, NSApplicationDelegate, NSMenuDelegate {
             self.setStatus(code == 0 ? "Image sent" : "Send issue: \(detail)")
         }
     }
+
+    func activateClock(_ shortcut: String) {
+        DispatchQueue.global(qos: .userInitiated).async {
+            if !self.isDaemonRunning() {
+                self.setStatus("Daemon not running")
+                return
+            }
+            let py = self.repo.appendingPathComponent(".venv/bin/python").path
+            let client = self.repo.appendingPathComponent("tools/divoom_clock.py").path
+            let (code, out) = self.run(py, [client, shortcut])
+            let detail = String(out.suffix(700))
+            self.setStatus(code == 0 ? "Activated custom face \(shortcut)" : "Clock issue: \(detail)")
+        }
+    }
+
+    @objc func activateCustomFace1() { activateClock("custom1") }
+    @objc func activateCustomFace2() { activateClock("custom2") }
 
     @objc func openCaptures() {
         NSWorkspace.shared.open(repo.appendingPathComponent("captures/mac-send"))

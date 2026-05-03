@@ -215,6 +215,100 @@ Current sender behavior for arbitrary images:
 
 Then wrap into `0x8b` start + chunks.
 
+## GIF / video conversion
+
+Android GIF/video sends use the same `0x8b` start/request/chunk transport. The encoded payload generalizes the still-image header:
+
+```text
+25 <frame_count_u8> <speed_ms_be16> <row_blocks_u8> <col_blocks_u8> <zstd_len_be32> <zstd_frame>
+```
+
+Where:
+
+- `row_blocks` / `col_blocks` are 16-pixel blocks.
+- Pixel dimensions are `col_blocks * 16` by `row_blocks * 16`.
+- Decompressed bytes are concatenated RGB888 frames.
+- Expected decompressed length is `frame_count * width * height * 3`.
+- `frame_count` is one byte, so current tooling limits video/GIF sends to `<=255` frames.
+
+MP4/video support in `tools/divoom_send.py` shells out to `ffmpeg` to sample frames, center-crop square, resize, concatenate RGB888 frames, zstd-compress, and send through the same daemon path.
+
+Example practical send:
+
+```bash
+.venv/bin/python tools/divoom_send.py input.mp4
+```
+
+Early MP4 tests falsely suggested a small raw-size limit because Python zstd's default window was too large. The key fix was matching Android's zstd window.
+
+Critical zstd finding:
+
+- Android's working high-frame payloads use a `128 KiB` zstd window (`window_log=17`).
+- Python zstd's default can choose a larger window for multi-frame `128x128` video.
+- With a larger window, the device may ACK the transfer but display black/glitched output.
+- Current tooling defaults to `--zstd-window-log 17` to match Android captures.
+
+Validated Android-style and macOS-generated sends:
+
+- Resent captured Android payload `128x128`, `16` frames, `speed=75`, payload `5124` bytes: works/quality good.
+- MP4-derived `128x128`, `4` frames, `speed=100`, `posterize-bits=4`, zstd window `17`: works/loops.
+- MP4-derived `128x128`, `10` frames, `speed=100`, `posterize-bits=4`, zstd window `17`: works/looks good.
+- MP4-derived `128x128`, `16` frames, `speed=75`, `posterize-bits=4`, zstd window `17`: works/looks best in early testing.
+- MP4-derived `128x128`, `16` frames, `speed=75`, `posterize-bits=5`: works with better color but transfer is larger/slower.
+- MP4-derived `128x128`, `26` frames, `speed=100`, `posterize-bits=4`: works/loops well.
+- MP4-derived `128x128`, `26` frames, `speed=100`, `posterize-bits=5`: works but transfer feels too large/slow.
+- MP4-derived `128x128`, `32` frames, `speed=100`, `posterize-bits=4`: works, but transfer time starts to feel less ideal.
+- `48x48` / `3x3` blocks glitched in testing; stick to observed stable block sizes: `1x1`, `2x2`, `4x4`, `8x8` (`16`, `32`, `64`, `128` px).
+
+Practical rules:
+
+- Prefer `128x128` now that zstd `window_log=17` is fixed.
+- Keep zstd window at `17`.
+- Do not activate a custom face after upload unless you intentionally want to switch away from the uploaded animation; doing so can make the animation appear only briefly.
+- Posterizing/noise reduction helps MP4-derived video compress more like phone GIFs. `posterize-bits=4` is fast/small; `posterize-bits=5` has better color but larger transfer.
+- More frames increase both duration and transfer time. A good balance is around `20` frames at `100ms` (`~2s`).
+
+Balanced recommended profile:
+
+```bash
+.venv/bin/python tools/divoom_send.py input.mp4 \
+  --size 128 \
+  --max-frames 20 \
+  --fps 10 \
+  --speed 100 \
+  --posterize-bits 4
+```
+
+Higher-color shorter profile:
+
+```bash
+.venv/bin/python tools/divoom_send.py input.mp4 \
+  --size 128 \
+  --max-frames 16 \
+  --fps 13.333 \
+  --speed 75 \
+  --posterize-bits 5
+```
+
+Longer-duration profile:
+
+```bash
+.venv/bin/python tools/divoom_send.py input.mp4 \
+  --size 128 \
+  --max-frames 26 \
+  --fps 10 \
+  --speed 100 \
+  --posterize-bits 4
+```
+
+Build-only preview/packet generation:
+
+```bash
+.venv/bin/python tools/divoom_send.py input.mp4 --build-only
+```
+
+Full `128x128` video can generate large transfers; reduce `--max-frames`, use `--posterize-bits 4`, or lower `--fps` if Bluetooth transfer time is too high. Avoid reducing below `128x128` unless transfer time matters more than sharpness.
+
 ## Artifacts / tools
 
 Captured/reconstructed artifacts:
@@ -234,7 +328,8 @@ Scripts:
   - Strips per-frame checksums correctly.
   - Decompresses Zstd.
 - `tools/send_divoom_image.py`
-  - Converts an image to Divoom payload/packet files.
+  - Converts an image or video/GIF-like frame sequence to Divoom payload/packet files.
+  - Uses zstd `window_log=17` by default to match Android GIF sends.
   - Its pyserial send path is not preferred.
 - `tools/DivoomRFCOMMSend.swift`
   - Direct IOBluetooth RFCOMM sender.
@@ -269,6 +364,8 @@ Implemented tools:
 - `tools/DivoomDaemon.swift`
 - `tools/divoom-daemon`
 - `tools/divoom_send.py`
+  - Preferred CLI for image/video sends through the daemon.
+  - Supports MP4/video tuning: `--start`, `--duration`, `--fps`, `--speed`, `--max-frames`, `--size`, `--brightness`, `--contrast`, `--saturation`, `--posterize-bits`, `--sharpen`, `--zstd-window-log`.
 
 Daemon behavior:
 
